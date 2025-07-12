@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Send, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import axios from 'axios';
 
 interface Message {
   id: string;
@@ -57,165 +58,94 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ onLocationRequest 
     setIsLoading(true);
 
     try {
-      // Check if this is a location-based query
-      const locationKeywords = ['near', 'nearby', 'around', 'find', 'restaurant', 'hotel', 'cafe', 'attraction', 'place'];
-      const isLocationQuery = locationKeywords.some(keyword => 
-        text.toLowerCase().includes(keyword)
-      );
+        const locationKeywords = ['near', 'nearby', 'around', 'find', 'restaurant', 'hotel', 'cafe', 'attraction', 'place'];
+        const isLocationQuery = locationKeywords.some(keyword =>
+            text.toLowerCase().includes(keyword)
+        );
 
-      if (isLocationQuery) {
-        onLocationRequest(text);
-      }
-
-      // Call AlleAI Chat API
-      const response = await fetch('https://api.alle-ai.com/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'X-API-KEY': 'alle-dY75cAyl8yusU1alGn9wC3q2pqhF4zx6wkIy',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'ministral-3b',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are a helpful travel assistant. Provide friendly, informative responses about travel, places, restaurants, and activities. Keep responses concise but helpful.'
-            },
-            {
-              role: 'user',
-              content: text
-            }
-          ]
-        })
-      });
-
-      console.log('Response status:', response.status);
-      console.log('Response headers:', response.headers);
-
-      if (!response.ok) {
-        throw new Error(`API request failed with status: ${response.status}`);
-      }
-
-      // Get response as text first to check if it's JSON
-      const responseText = await response.text();
-      console.log('Raw response:', responseText);
-      
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.log('Response is not JSON, treating as string:', responseText);
-        // If it's not JSON, treat the response as the message content
-        data = { content: responseText };
-      }
-
-      console.log('Parsed data:', data);
-
-      let aiResponse = 'Sorry, I could not understand that.';
-
-      // Handle AlleAI's actual response format
-      if (data.success && data.responses && data.responses.responses) {
-        // Get response from the first available model
-        const modelResponses = data.responses.responses;
-        const firstModel = Object.keys(modelResponses)[0];
-        if (firstModel && modelResponses[firstModel] && modelResponses[firstModel].message) {
-          aiResponse = modelResponses[firstModel].message.content;
+        if (isLocationQuery) {
+            onLocationRequest(text);
         }
-      } 
-      // Handle direct content response
-      else if (data.content) {
-        aiResponse = data.content;
-      }
-      // Handle OpenAI-style format as fallback
-      else if (data.choices && data.choices[0] && data.choices[0].message) {
-        aiResponse = data.choices[0].message.content;
-      }
-      // Handle simple string response
-      else if (typeof data === 'string') {
-        aiResponse = data;
-      }
 
-      console.log('Final AI response:', aiResponse);
+        const response = await axios.post(
+            'https://puny-moyna-yawoffeh-a3130120.koyeb.app/stories/generate',
+            { query: text },
+            {
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            }
+            }
+        );
 
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: aiResponse,
-        isUser: false,
-        timestamp: new Date()
-      };
+        const aiResponse = typeof response.data === 'string'
+            ? response.data
+            : 'Sorry, I could not understand that.';
 
-      setMessages(prev => [...prev, aiMessage]);
-
-      // Convert response to speech
-      await speakText(aiResponse);
-
-    } catch (error) {
-      console.error('Error details:', error);
-      
-      // More specific error handling
-      let errorMessage = 'Failed to get response. Please try again.';
-      
-      if (error instanceof TypeError && error.message.includes('fetch')) {
-        errorMessage = 'Network error. Please check your connection or try again later.';
-      } else if (error instanceof Error) {
-        errorMessage = `API Error: ${error.message}`;
-      }
-      
-      // Add fallback response for location queries
-      if (text.toLowerCase().includes('restaurant') || text.toLowerCase().includes('food')) {
-        const fallbackMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          text: "I'm having trouble connecting to the AI service right now, but I can help you find restaurants using the map! Try asking about specific types of food or restaurants near you.",
-          isUser: false,
-          timestamp: new Date()
+        const aiMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            text: aiResponse,
+            isUser: false,
+            timestamp: new Date()
         };
-        setMessages(prev => [...prev, fallbackMessage]);
-      }
-      
-      toast({
-        title: "Connection Error",
-        description: errorMessage,
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
+
+        setMessages(prev => [...prev, aiMessage]);
+        await speakText(aiResponse);
+
+        } catch (error) {
+        console.error('Error details:', error);
+        toast({
+            title: "Connection Error",
+            description: "Failed to get response. Please try again.",
+            variant: "destructive"
+        });
+        } finally {
+        setIsLoading(false);
+        }
     }
-  };
+
 
   const speakText = async (text: string) => {
     try {
       setIsSpeaking(true);
-      const response = await fetch('https://api.alle-ai.com/api/v1/audio/tts', {
-        method: 'POST',
-        headers: {
-          'X-API-KEY': 'alle-dY75cAyl8yusU1alGn9wC3q2pqhF4zx6wkIy',
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
+      const response = await axios.post(
+        'https://api.alle-ai.com/api/v1/audio/tts',
+        {
+            models: ['gpt-4o-mini-tts'],
+            prompt: text,
+            voice: 'nova',
+            model_specific_params: {}
         },
-        body: JSON.stringify({
-          models: ['gpt-4o-mini-tts'],
-          prompt: text,
-          voice: 'nova',
-          model_specific_params: {}
-        })
-      });
+        {
+            headers: {
+            'X-API-KEY': 'alle-dY75cAyl8yusU1alGn9wC3q2pqhF4zx6wkIy',
+            'Content-Type': 'application/json',
+            Accept: 'application/json'
+            },
+            responseType: 'blob'
+        }
+        );
 
-      if (response.ok) {
-        const audioBlob = await response.blob();
+        const audioBlob = new Blob([response.data], { type: 'audio/wav' });
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = new Audio(audioUrl);
-        
+
         audio.onended = () => {
-          setIsSpeaking(false);
-          URL.revokeObjectURL(audioUrl);
+        setIsSpeaking(false);
+        URL.revokeObjectURL(audioUrl);
         };
-        
+
         await audio.play();
-      }
     } catch (error) {
-      console.error('TTS Error:', error);
-      setIsSpeaking(false);
+        console.log(error);
+        toast({
+          title: "Speech Error",
+          description: "Failed to convert text to speech. Please try again.",
+          variant: "destructive"
+        });
+        setIsSpeaking(false);
     }
+
   };
 
   const startRecording = async () => {
